@@ -1,4 +1,4 @@
-# Godot UI Exporter 1.1
+# Godot UI Exporter 1.2
 
 Figma에서 선택한 화면/레이어의 이름과 추출 리소스를 한 화면에서 정리하는 로컬 개발 플러그인입니다.
 API 키, 서버, MCP 연결, npm 설치, 빌드 과정이 필요하지 않습니다.
@@ -90,7 +90,7 @@ ZIP에는 다음 파일이 들어 있습니다. 실제 폴더 이름은 선택�
 - `TextureRect.expand_mode=IGNORE_SIZE`를 사용해 텍스처의 원본 픽셀이 Control의 최소 크기를 강제로 바꾸지 않게 합니다.
 - 화면 레이어 이름을 바꿔도 노드 ID 기반 출력 폴더는 유지됩니다.
 - 이미지 hash가 같아도 다른 크롭/크기의 노드이면 각각 내보냅니다.
-- 고정 경계(`useAbsoluteBounds=true`)로 추출합니다. 경계 바깥 그림자·블러까지 필요하면 그 여백을 포함한 Frame으로 감싼 뒤 추출하세요.
+- Figma 기본 경계 옵션(`useAbsoluteBounds=false`)으로 추출합니다. 이미지 배치는 `absoluteRenderBounds`를 사용하여 바깥 그림자·스트로크·자식 그래픽을 포함하며, 실제 PNG 크기를 Godot 논리 크기에 반영합니다. 원래 레이어 크기는 `bounds`와 `original_logical_size`에 별도 보존합니다. Figma 자체의 Clip content와 마스크는 유지합니다.
 - 선택한 노드가 바뀌면 출력 폴더도 바뀝니다. 기존 화면을 복제하면 새 노드이므로 새 화면으로 취급합니다.
 
 ## 5. 정확도와 제한

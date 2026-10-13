@@ -12,6 +12,10 @@ function slug(s) { return String(s).normalize('NFKD').replace(/[^a-zA-Z0-9]+/g, 
 function key(n) { return 'n_' + n.id.replace(/[^a-zA-Z0-9]/g, '_'); }
 function getMeta(n) { try { return JSON.parse(n.getPluginData(META) || '{}'); } catch (_) { return {}; } }
 function bounds(n) { return n.absoluteBoundingBox ? clone(n.absoluteBoundingBox) : { x: 0, y: 0, width: num(n.width), height: num(n.height) }; }
+function exportBounds(row) {
+  const b = ['png','svg'].includes(row.mode) ? row.render_bounds : null;
+  return b && [b.x,b.y,b.width,b.height].every(Number.isFinite) && b.width > 0 && b.height > 0 ? clone(b) : clone(row.bounds);
+}
 function transformed(n) {
   const t = n.absoluteTransform;
   return t && (Math.abs(t[0][0] - 1) > 0.0001 || Math.abs(t[1][1] - 1) > 0.0001 || Math.abs(t[0][1]) > 0.0001 || Math.abs(t[1][0]) > 0.0001);
@@ -87,7 +91,7 @@ async function inspect(root) {
       ancestor_opacity: ancestorOpacity, warnings: componentWarning ? [componentWarning] : [] };
     if (row.text) row.warnings.push('폰트 파일은 별도 준비. 줄바꿈·자간·혼합 스타일은 Godot에서 확인');
     if (rec.mode === 'png' && row.mode === 'native') row.warnings.push('복잡한 효과를 native로 지정함: Godot 씬에서 외형 차이 가능');
-    if (row.style.effects.some(e => e.visible !== false)) row.warnings.push('고정 경계 추출: 경계 밖 그림자/블러는 잘릴 수 있음. 여백 프레임을 만들어 선택하세요.');
+    if (row.layout.clips_content) row.warnings.push('Figma의 Clip content 설정은 유지됩니다. 프레임 자체가 숨긴 부분은 출력되지 않습니다.');
     if (!['NORMAL','PASS_THROUGH'].includes(row.style.blend_mode)) row.warnings.push('배경 의존 혼합 모드: 배경과 함께 부모를 PNG로 추출 권장');
     if (n.isMask) row.warnings.push('마스크만 추출하지 말고 마스크를 포함한 부모를 PNG로 지정하세요.');
     rows.push(row);
@@ -185,26 +189,30 @@ async function operation(msg) {
     }
     const scale = Number(msg.scale);
     if (![1,2,3,4].includes(scale)) throw new Error('PNG 배율은 1~4 중에서 선택하세요.');
-    const b = bounds(root), active = rows.filter(r => !r.suppressed && r.mode !== 'skip');
+    const active = rows.filter(r => !r.suppressed && r.mode !== 'skip');
+    active.forEach(r => { r.export_bounds = exportBounds(r); });
+    const rootRow = rows.find(r => r.id === root.id);
+    const b = ['png','svg'].includes(rootRow.mode) ? exportBounds(rootRow) : bounds(root);
     if (b.width <= 0 || b.height <= 0 || !active.length) throw new Error('출력할 요소 또는 유효한 화면 크기가 없습니다.');
     // Stable destination even when the screen layer is renamed.
     const bundle = 'screen_' + key(root);
     const assets = active.filter(r => ['png','svg'].includes(r.mode));
-    const manifest = { schema_version: 1, generator: 'Godot UI Exporter 1.1.0', screen_id: key(root), screen_name: root.name,
+    const manifest = { schema_version: 1, generator: 'Godot UI Exporter 1.2.0', screen_id: key(root), screen_name: root.name,
       export_scope: msg.export_scope === 'composition' ? 'composition' : 'resources',
       bundle_name: bundle, root_node_id: root.id, reference_size: { width: b.width, height: b.height },
-      bounds_policy: 'absoluteBoundingBox; useAbsoluteBounds=true; no transparent trim; outside effects may be clipped',
+      bounds_policy: 'images: absoluteRenderBounds with absoluteBoundingBox fallback; useAbsoluteBounds=false; native: absoluteBoundingBox',
+      reference_origin: { x: b.x, y: b.y },
       coordinates: 'axis-aligned bounds relative to selected root; logical pixels independent of export scale',
       godot_version: '4.x', scene_layout: 'fixed-reference flat draw order; responsive rules remain metadata',
       root_clips_content: !!root.clipsContent, nodes: active.map(r => Object.assign({}, r, {
-        rect: { x: r.bounds.x - b.x, y: r.bounds.y - b.y, width: r.bounds.width, height: r.bounds.height },
+        rect: { x: r.export_bounds.x - b.x, y: r.export_bounds.y - b.y, width: r.export_bounds.width, height: r.export_bounds.height },
         asset_path: ['png','svg'].includes(r.mode) ? 'assets/' + r.scope + '/' + r.asset_name + '.' + r.mode : null,
         export_scale: r.mode === 'png' ? scale : 1
       })), assets: [], warnings: [
         '자동 분류는 규칙 기반 제안입니다. 공통 후보는 사람이 확인하세요.',
         'generated.tscn은 기준 크기의 시각 배치 초안입니다. 버튼 동작·반응형 Container·9-slice는 자동 생성하지 않습니다.',
         'native 텍스트는 첫 스타일을 사용하며 폰트·줄바꿈을 Godot에서 확인해야 합니다.',
-        '고정 경계 밖 효과는 잘릴 수 있습니다. 필요한 여백을 포함한 Frame을 추출하세요.'
+        '이미지는 렌더링 경계까지 포함합니다. Figma에서 설정한 Clip content와 마스크는 유지됩니다.'
       ] };
     post('export-start', { total: assets.length, bundle });
     let totalBytes = 0;
@@ -212,9 +220,9 @@ async function operation(msg) {
       if (cancelled) throw new Error('내보내기를 취소했습니다.');
       const r = assets[i], n = await figma.getNodeByIdAsync(r.id);
       if (!n || n.removed) throw new Error(r.original_name + ': 레이어가 삭제되었습니다.');
-      if (Math.max(r.bounds.width, r.bounds.height) * (r.mode === 'png' ? scale : 1) > 16384) throw new Error(r.name + ': 16,384px 초과. 배율을 낮추거나 나누세요.');
-      const settings = r.mode === 'png' ? { format: 'PNG', constraint: { type: 'SCALE', value: scale }, contentsOnly: true, useAbsoluteBounds: true }
-        : { format: 'SVG', svgOutlineText: true, svgIdAttribute: false, svgSimplifyStroke: true, contentsOnly: true, useAbsoluteBounds: true };
+      if (Math.max(r.export_bounds.width, r.export_bounds.height) * (r.mode === 'png' ? scale : 1) > 16384) throw new Error(r.name + ': 16,384px 초과. 배율을 낮추거나 나누세요.');
+      const settings = r.mode === 'png' ? { format: 'PNG', constraint: { type: 'SCALE', value: scale }, contentsOnly: true, useAbsoluteBounds: false }
+        : { format: 'SVG', svgOutlineText: true, svgIdAttribute: false, svgSimplifyStroke: true, contentsOnly: true, useAbsoluteBounds: false };
       const bytes = await n.exportAsync(settings);
       if (cancelled) throw new Error('내보내기를 취소했습니다.');
       totalBytes += bytes.length;
@@ -224,8 +232,15 @@ async function operation(msg) {
       if (r.mode === 'png' && bytes.length >= 24) {
         const u32 = offset => bytes[offset]*16777216 + bytes[offset+1]*65536 + bytes[offset+2]*256 + bytes[offset+3];
         pixelSize = { width: u32(16), height: u32(20) };
+        if (Math.max(pixelSize.width,pixelSize.height) > 16384) throw new Error(r.name + ': 실제 PNG가 16,384px를 초과합니다.');
+        // Figma rounds raster dimensions; use the resulting size, not the old layer box.
+        const exported = manifest.nodes.find(row => row.id === r.id);
+        exported.rect.width = pixelSize.width / scale;
+        exported.rect.height = pixelSize.height / scale;
       }
-      manifest.assets.push({ resource_id: r.resource_id, node_id: r.id, path, logical_size: { width: r.bounds.width, height: r.bounds.height }, pixel_size: pixelSize, scale: r.mode === 'png' ? scale : 1 });
+      const exported = manifest.nodes.find(row => row.id === r.id);
+      if (r.id === root.id) manifest.reference_size = { width: exported.rect.width, height: exported.rect.height };
+      manifest.assets.push({ resource_id: r.resource_id, node_id: r.id, path, logical_size: { width: exported.rect.width, height: exported.rect.height }, original_logical_size: { width: r.bounds.width, height: r.bounds.height }, export_bounds: r.export_bounds, pixel_size: pixelSize, scale: r.mode === 'png' ? scale : 1 });
       post('export-file', { path, bytes, done: i + 1, total: assets.length, name: r.name });
     }
     if (cancelled) throw new Error('내보내기를 취소했습니다.');

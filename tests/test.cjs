@@ -14,7 +14,7 @@ function png(width,height) {
 function node(id,name,type,x,y,w,h,extra={}) {
   const meta={};const n={id,name,type,x,y,width:w,height:h,visible:true,opacity:1,blendMode:'NORMAL',fills:[],strokes:[],effects:[],exportSettings:[],absoluteBoundingBox:{x,y,width:w,height:h},absoluteRenderBounds:{x,y,width:w,height:h},absoluteTransform:[[1,0,x],[0,1,y]],relativeTransform:[[1,0,x],[0,1,y]],
     getPluginData:k=>meta[k]||'',setPluginData:(k,v)=>{meta[k]=v;},getMainComponentAsync:async()=>({key:'component-button'}),
-    exportAsync:async settings=>{calls.push({id,settings});if(settings.format==='SVG')return new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"></svg>');return png(w*settings.constraint.value,h*settings.constraint.value);},...extra};registry.set(id,n);if(n.children)n.children.forEach(c=>c.parent=n);return n;
+    exportAsync:async settings=>{calls.push({id,settings});if(settings.format==='SVG')return new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"></svg>');const b=settings.useAbsoluteBounds===false&&n.absoluteRenderBounds?n.absoluteRenderBounds:{width:w,height:h};return png(Math.ceil(b.width*settings.constraint.value),Math.ceil(b.height*settings.constraint.value));},...extra};registry.set(id,n);if(n.children)n.children.forEach(c=>c.parent=n);return n;
 }
 const solid={type:'SOLID',color:{r:.2,g:.3,b:.4}};
 const icon=node('2:1','아이콘','VECTOR',110,220,24,24);
@@ -53,7 +53,7 @@ async function run(){
   const done=messages.find(m=>m.type==='export-complete');assert(done,JSON.stringify(messages.filter(m=>m.type==='error')));
   const m=done.manifest;assert.equal(m.assets.length,4);assert.equal(calls.length,4);
   assert(!calls.some(c=>['3:1','3:2'].includes(c.id)));
-  assert(calls.every(c=>c.settings.useAbsoluteBounds===true&&c.settings.constraint.value===2));
+  assert(calls.every(c=>c.settings.useAbsoluteBounds===false&&c.settings.constraint.value===2));
   const a=m.assets.find(a=>a.node_id===image1.id);assert.equal(a.pixel_size.width,200);assert.equal(a.logical_size.width,100);
   const r=m.nodes.find(r=>r.id===image1.id);assert.equal(r.rect.x,50);assert.equal(r.rect.y,20);
   const scene=core.scene(m);assert(scene.content.includes('offset_right = 150'));assert(scene.content.includes('res://figma_ui/screen_n_1_1/assets/shared/button_start.png'));assert(scene.content.includes('expand_mode = 1'));
@@ -97,6 +97,25 @@ async function run(){
   const beforeFiner=calls.length;
   await figma.ui.onmessage({type:'export',root_id:screen.id,configs:finer,scale:1,export_scope:'resources'});
   assert.deepEqual(calls.slice(beforeFiner).map(c=>c.id),[partA.id,partB.id,groupB.id]);
+  // Artwork overflowing its layout box expands the PNG and shifts its scene origin.
+  const overflow=node('overflow:art','overflow_art','VECTOR',110,220,24,24,{absoluteRenderBounds:{x:100,y:215,width:44.25,height:39.25}});
+  const overflowScreen=node('overflow:screen','overflow_screen','FRAME',100,200,100,100,{children:[overflow],clipsContent:false});
+  figma.currentPage.selection=[overflowScreen];await context.api.scan(false);
+  const overflowRows=messages.at(-1).rows;
+  await figma.ui.onmessage({type:'export',root_id:overflowScreen.id,configs:cfg(overflowRows),scale:2,export_scope:'resources'});
+  assert.equal(messages.at(-1).type,'export-complete');
+  const overflowManifest=messages.at(-1).manifest;
+  const overflowAsset=overflowManifest.assets[0],overflowNode=overflowManifest.nodes.find(r=>r.id===overflow.id);
+  assert.equal(overflowAsset.pixel_size.width,89);assert.equal(overflowAsset.logical_size.width,44.5);
+  assert.equal(overflowAsset.original_logical_size.width,24);
+  assert.equal(overflowNode.rect.x,0);assert.equal(overflowNode.rect.y,15);
+  assert.equal(overflowNode.rect.height,39.5);
+  assert(core.scene(overflowManifest).content.includes('offset_right = 44.5'));
+  // Exporting that artwork alone also expands the reference canvas.
+  figma.currentPage.selection=[overflow];await context.api.scan(false);
+  await figma.ui.onmessage({type:'export',root_id:overflow.id,configs:cfg(messages.at(-1).rows),scale:2});
+  const solo=messages.at(-1).manifest;assert.equal(solo.reference_size.width,44.5);
+  assert.equal(solo.reference_origin.x,100);assert.equal(solo.nodes[0].rect.x,0);
   // PNG parents of every container type export once, including nested children.
   for (const type of ['GROUP','FRAME','COMPONENT','INSTANCE']) {
     const leaf=node('fixture:'+type+':leaf','leaf','VECTOR',0,0,8,8);
