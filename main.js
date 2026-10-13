@@ -33,6 +33,7 @@ function recommendation(n) {
   if (children.length && n.clipsContent) return { mode: 'png', reason: '클리핑 경계를 포함해 추출' };
   if (f.some(p => p.type !== 'SOLID') || f.length > 1 || s.length > 1 || s.some(p => p.type !== 'SOLID')) return { mode: 'png', reason: '이미지·그라데이션·복합 채우기' };
   if (n.type === 'TEXT') return { mode: 'native', reason: 'Godot Label — 글자 수정 가능, 폰트 별도 적용' };
+  if (n.type === 'GROUP' && children.length) return { mode: 'png', reason: '그룹 단위 합성: 자식 전체를 이미지 한 장에 포함' };
   if (['RECTANGLE', 'FRAME', 'COMPONENT', 'INSTANCE', 'GROUP', 'SECTION', 'COMPONENT_SET'].includes(n.type)) {
     if (s.length && (n.strokeAlign !== 'INSIDE' || (n.dashPattern && n.dashPattern.length))) return { mode: 'png', reason: '외곽·중앙·점선 스트로크 보존' };
     return { mode: 'native', reason: children.length ? '구조·위치 JSON / 단색 배경은 Panel' : '단색 패널은 Godot StyleBoxFlat' };
@@ -70,9 +71,9 @@ async function inspect(root) {
     const images = paints(n).filter(p => p.type === 'IMAGE').map(p => p.imageHash);
     images.forEach(h => imageCount.set(h, (imageCount.get(h) || 0) + 1));
     const hiddenNow = hidden || n.visible === false;
-    // Selected containers are exported as a complete composition.
-    if (n === root && !hiddenNow && 'children' in n && n.children.length && !n.exportSettings?.length) {
-      rec.mode = 'png'; rec.reason = '선택한 부모: 자식 전체를 포함해 합성 추출';
+    // The selected screen is an analysis scope; image modes define asset roots.
+    if (n === root && rec.reason === '클리핑 경계를 포함해 추출') {
+      rec.mode = 'native'; rec.reason = '선택 화면: 하위에서 지정한 묶음별 리소스 추출';
     }
     const row = { id: n.id, parent_id: parent, resource_id: key(n), original_name: n.name, type: n.type, depth,
       hidden: hiddenNow, name: suggestedName(n), scope: meta.scope === 'shared' ? 'shared' : 'screen',

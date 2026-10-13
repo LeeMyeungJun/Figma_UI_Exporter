@@ -40,7 +40,7 @@ async function run(){
   const scan=messages.find(m=>m.type==='scan');assert(scan);assert.equal(scan.rows.length,11);
   await figma.ui.onmessage({type:'focus',id:image1.id});assert.equal(figma.currentPage.selection[0].id,image1.id);events.selectionchange();assert.equal(messages.filter(m=>m.type==='scan').length,1);
   assert.equal(scan.rows[0].name,'godot2');
-  assert.equal(scan.rows[0].mode,'png');
+  assert.equal(scan.rows[0].mode,'native');
   assert.equal(scan.rows.find(r=>r.id==='2:5').mode,'png');
   assert.equal(scan.rows.find(r=>r.id==='2:7').shared_candidate,true);
   assert.equal(scan.rows.find(r=>r.id==='2:2').reused_image,true);
@@ -80,15 +80,32 @@ async function run(){
   const completed=messages.filter(x=>x.type==='export-complete').length;
   await figma.ui.onmessage({type:'export',root_id:root.id,configs,scale:2});assert(messages.at(-1).message.includes('취소'));assert.equal(messages.filter(x=>x.type==='export-complete').length,completed);
   figma.currentPage.selection=[image2];await context.api.scan(false);assert.equal(messages.at(-1).root.id,image2.id);
-  // Selected parents of every container type export once, including nested children.
+  // A native screen can contain several independent composed asset roots.
+  const partA=node('split:a','part_a','VECTOR',0,0,8,8);
+  const partB=node('split:b','part_b','VECTOR',8,0,8,8);
+  const partC=node('split:c','part_c','VECTOR',16,0,8,8);
+  const groupA=node('split:ga','group_a','GROUP',0,0,16,8,{children:[partA,partB]});
+  const groupB=node('split:gb','group_b','GROUP',16,0,8,8,{children:[partC]});
+  const screen=node('split:screen','screen','FRAME',0,0,24,8,{children:[groupA,groupB],clipsContent:true});
+  figma.currentPage.selection=[screen];await context.api.scan(false);
+  const splitRows=messages.at(-1).rows;assert.equal(splitRows[0].mode,'native');
+  const beforeSplit=calls.length;
+  await figma.ui.onmessage({type:'export',root_id:screen.id,configs:cfg(splitRows),scale:1,export_scope:'resources'});
+  assert.equal(messages.at(-1).type,'export-complete');
+  assert.deepEqual(calls.slice(beforeSplit).map(c=>c.id),[groupA.id,groupB.id]);
+  const finer=cfg(splitRows);finer.find(c=>c.id===groupA.id).mode='native';
+  const beforeFiner=calls.length;
+  await figma.ui.onmessage({type:'export',root_id:screen.id,configs:finer,scale:1,export_scope:'resources'});
+  assert.deepEqual(calls.slice(beforeFiner).map(c=>c.id),[partA.id,partB.id,groupB.id]);
+  // PNG parents of every container type export once, including nested children.
   for (const type of ['GROUP','FRAME','COMPONENT','INSTANCE']) {
     const leaf=node('fixture:'+type+':leaf','leaf','VECTOR',0,0,8,8);
     const nested=node('fixture:'+type+':nested','nested','GROUP',0,0,8,8,{children:[leaf]});
     const parent=node('fixture:'+type,'parent_'+type.toLowerCase(),type,0,0,16,16,{children:[nested]});
     figma.currentPage.selection=[parent];await context.api.scan(false);
-    const rows=messages.at(-1).rows;assert.equal(rows[0].mode,'png');
+    const rows=messages.at(-1).rows;const parentConfigs=cfg(rows);parentConfigs[0].mode='png';
     const beforeCalls=calls.length;
-    await figma.ui.onmessage({type:'export',root_id:parent.id,configs:cfg(rows),scale:1});
+    await figma.ui.onmessage({type:'export',root_id:parent.id,configs:parentConfigs,scale:1});
     assert.equal(messages.at(-1).type,'export-complete');assert.equal(messages.at(-1).manifest.assets.length,1);
     assert.equal(calls.length,beforeCalls+1);assert.equal(calls.at(-1).id,parent.id);
     parent.setPluginData('godot_ui_exporter_v1',JSON.stringify({mode:'native'}));
