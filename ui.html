@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{font-family:Inter,'Noto Sans KR',Arial,sans-serif;color:#e7ecf4;background:#10151e;font-size:12px;color-scheme:dark}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,select,input[type=text]{border:1px solid #344053;border-radius:6px;background:#1b2431;color:#e7ecf4}button{padding:8px 12px;cursor:pointer;font-weight:600}button:hover{background:#29374a}button:disabled{opacity:.4;cursor:default}input[type=text]{padding:7px 9px;min-width:0}input[type=checkbox]{accent-color:#69dfa7}select{padding:7px 5px}header{padding:22px 24px 15px;border-bottom:1px solid #283343;display:flex;justify-content:space-between;align-items:center}h1{font-size:22px;margin:0 0 5px;letter-spacing:-.5px}p{margin:0;color:#9facbf;line-height:1.6}.brand{font-size:10px;letter-spacing:2px;color:#69dfa7;margin-bottom:7px}.tag{font-size:10px;background:#243747;color:#bde0f5;padding:5px 8px;border-radius:20px}main{padding:16px 24px 110px}.target{padding:13px 16px;background:#182130;border:1px solid #2b394c;border-radius:9px;display:flex;align-items:center;gap:14px}.target strong{font-size:15px}.target .sub{font-size:11px;color:#93a4b9;margin-top:5px}.target .right{margin-left:auto;display:flex;align-items:center;gap:10px}label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}.stats{display:flex;gap:20px;margin:16px 0;color:#a8b6c8}.stats b{color:#eef6ff;font-size:20px;margin-right:5px}.toolbar{display:flex;align-items:center;gap:10px;margin:10px 0}.toolbar input{flex:1}.table-wrap{border:1px solid #2b384b;border-radius:8px;overflow:auto;max-height:350px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{position:sticky;top:0;z-index:1;background:#202c3d;color:#b4c4d9;text-align:left}th{padding:10px 8px;font-weight:500}td{border-top:1px solid #263244;padding:10px 8px;vertical-align:top}th:nth-child(1){width:37%}th:nth-child(2){width:13%}th:nth-child(3){width:13%}th:nth-child(4){width:37%}td input{width:100%;font-family:ui-monospace,monospace;font-size:11px}td select{width:100%;font-size:11px}.origin{font-size:10px;color:#92a4ba;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.reason{font-size:11px;color:#b8c5d5;line-height:1.5}.badge{display:inline-block;font-size:10px;padding:2px 5px;border-radius:4px;margin:0 4px 5px 0;background:#2a374a;color:#b9cbe1}.green{background:#1d3b31;color:#8de7b7}.amber{background:#433726;color:#f0c781}.muted{opacity:.48}.invalid{border-color:#f88484!important}.validation-error{background:#3b2228}.validation-error input{border-color:#ff6f7d!important;box-shadow:0 0 0 2px #ff6f7d44}.find{padding:0;background:none;border:0;color:#79b9fb;font-size:10px;margin-left:6px}.note{font-size:11px;color:#9aadc2;line-height:1.7;margin:12px 0}.empty{padding:60px 20px;text-align:center;color:#9aadc2;font-size:14px}.footer{position:fixed;bottom:0;left:0;right:0;padding:13px 24px;background:#141d29;border-top:1px solid #34435a}.actions{display:flex;justify-content:space-between;gap:12px;align-items:center}.actions>div{display:flex;align-items:center;gap:10px}.primary{background:#75dfb0;color:#09291b;border-color:#75dfb0}.primary:hover{background:#a2efcb}.status{margin:0 0 10px;min-height:15px;color:#9bcbb8;white-space:pre-wrap}.error{color:#ffaaaa}#download{display:none}progress{width:100%;height:4px;accent-color:#75dfb0;display:none;margin:0 0 9px}.tip{font-size:10px;color:#90a4b9}a{color:#a4d2ff}
+.name-field{display:flex;align-items:center;gap:6px}.name-field input{flex:1;width:auto}.focus-node{flex:none;padding:7px 9px;border-color:#318ce7;background:#1769aa;color:#eaf6ff}.focus-node:hover{background:#2385d0}
+</style></head><body>
+<header><div><div class="brand">FIGMA → GODOT / LOCAL PLUGIN</div><h1>Godot UI Exporter</h1><p>선택한 레이어를 정리하고, 이름·리소스·기준 배치를 한 번에 내보내세요.</p></div><span class="tag">v1.0 · 네트워크 사용 없음</span></header>
+<main><div class="target"><div><strong id="target">레이어를 선택하세요</strong><div class="sub" id="target-info">Frame 하나를 선택하면 하위 요소를 분석합니다.</div></div><div class="right"><label><input id="pin" type="checkbox">선택 고정</label><button id="refresh">다시 분석</button></div></div>
+<div class="stats"><span><b id="count-all">0</b>개 요소</span><span><b id="count-assets">0</b>개 이미지 추출</span><span><b id="count-native">0</b>개 native</span><span><b id="count-shared">0</b>개 공통 후보</span></div>
+<div class="toolbar"><input id="search" type="text" placeholder="이름 검색" aria-label="검색"><label><input id="assets-only" type="checkbox">추출 이미지만</label><button id="shared">공통 후보 표시 적용</button></div>
+<div class="table-wrap"><table><thead><tr><th>이름</th><th>추출 방식</th><th>분류</th><th>분석 · 크기</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="empty">Figma에서 Godot2 같은 화면 레이어를 선택하세요.</div></div>
+<div class="note">선택한 부모는 기본적으로 자식 전체를 포함한 이미지 한 장으로 추출합니다. 자식을 개별 추출하려면 부모의 방식을 <b>native</b>로 바꾸세요. 저장한 방식은 유지됩니다.<br><b>native</b> = 텍스트·단색 배경·구조를 JSON에 기록합니다. <b>PNG / SVG</b> = 해당 노드를 합성해 추출하며 자식 중복을 제외합니다.<br>공통 후보는 컴포넌트 반복 기준입니다. 동일한 이미지 원본만으로 리소스를 합치지 않습니다. 한글 레이어명은 영문 의미를 추측하지 않으므로 직접 수정해 주세요.</div>
+<div class="tip">고정 경계 사용 · PNG 2×여도 Godot 논리 크기는 유지 · 바깥 그림자가 필요하면 여백 Frame으로 감싸기 · PNG가 기본 권장</div></main>
+<div class="footer"><div id="status" class="status" role="status" aria-live="polite">준비됨</div><progress id="progress" value="0" max="1"></progress><div class="actions"><div><button id="save">이름·설정 저장</button><label><input id="rename" type="checkbox">레이어 이름에도 적용</label></div><div><label>PNG 배율<select id="scale"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select></label><button id="cancel" hidden>취소</button><button id="download">ZIP 다시 받기</button><button id="export" class="primary">전체 ZIP 내보내기</button></div></div></div>
+<script>
+/* Dependency-free ZIP (STORE) writer and Godot 4 starter scene compiler. */
+const ExportCore = (() => {
+  const enc = new TextEncoder();
+  const crcTable = Array.from({length:256}, (_,n) => { for(let k=0;k<8;k++) n=n&1?0xedb88320^(n>>>1):n>>>1; return n>>>0; });
+  function crc32(bytes) { let c=0xffffffff; for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8); return (c^0xffffffff)>>>0; }
+  function zip(files) {
+    const parts=[], central=[];let offset=0,centralSize=0;
+    const names=new Set();
+    for(const file of files){
+      if(names.has(file.path)||/(^|\/)\.\.(\/|$)|^\//.test(file.path))throw Error('중복 또는 잘못된 ZIP 경로: '+file.path);
+      names.add(file.path);
+      const name=enc.encode(file.path),data=typeof file.data==='string'?enc.encode(file.data):new Uint8Array(file.data),crc=crc32(data);
+      const local=new Uint8Array(30+name.length),v=new DataView(local.buffer);
+      v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x800,true);v.setUint16(12,33,true);v.setUint32(14,crc,true);v.setUint32(18,data.length,true);v.setUint32(22,data.length,true);v.setUint16(26,name.length,true);local.set(name,30);
+      const c=new Uint8Array(46+name.length),w=new DataView(c.buffer);
+      w.setUint32(0,0x02014b50,true);w.setUint16(4,20,true);w.setUint16(6,20,true);w.setUint16(8,0x800,true);w.setUint16(14,33,true);w.setUint32(16,crc,true);w.setUint32(20,data.length,true);w.setUint32(24,data.length,true);w.setUint16(28,name.length,true);w.setUint32(42,offset,true);c.set(name,46);
+      parts.push(local,data);central.push(c);offset+=local.length+data.length;centralSize+=c.length;
+    }
+    const end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,centralSize,true);e.setUint32(16,offset,true);
+    return new Blob([...parts,...central,end],{type:'application/zip'});
+  }
+  const q=s=>JSON.stringify(String(s));
+  const f=n=>Number.isFinite(Number(n))?String(Math.round(Number(n)*10000)/10000):'0';
+  const color=(paint,alpha=1)=>{const c=paint&&paint.color?paint.color:{r:0,g:0,b:0};return 'Color('+[c.r,c.g,c.b,(paint?(paint.opacity===undefined?1:paint.opacity):0)*alpha].map(f).join(', ')+')';};
+  function scene(m){
+    const ext=[],sub=[],nodes=[],fonts=new Set();
+    for(const r of m.nodes){
+      const rect=r.rect,s=r.style||{},id=r.resource_id.replace(/[^a-zA-Z0-9_]/g,'_');let type=null,props=[];
+      if(r.asset_path){
+        const e='Texture_'+id;ext.push('[ext_resource type="Texture2D" path='+q('res://figma_ui/'+m.bundle_name+'/'+r.asset_path)+' id='+q(e)+']');
+        type='TextureRect';props.push('texture = ExtResource('+q(e)+')','expand_mode = 1','stretch_mode = 0');
+        if(r.ancestor_opacity<1)props.push('self_modulate = Color(1, 1, 1, '+f(r.ancestor_opacity)+')');
+      }else if(r.text){
+        const t=r.text,first=t.segments[0]||{},paint=(first.fills||[]).find(p=>p.type==='SOLID'&&p.visible!==false);
+        const alpha=(s.opacity===undefined?1:s.opacity)*(r.ancestor_opacity===undefined?1:r.ancestor_opacity);
+        type='Label';props.push('text = '+q(t.characters),'theme_override_font_sizes/font_size = '+Math.max(1,Math.round(first.fontSize||16)),'theme_override_colors/font_color = '+color(paint,alpha),
+          'horizontal_alignment = '+({LEFT:0,CENTER:1,RIGHT:2,JUSTIFIED:3}[t.horizontal_alignment]||0),
+          'vertical_alignment = '+({TOP:0,CENTER:1,BOTTOM:2}[t.vertical_alignment]||0),'clip_text = true','autowrap_mode = '+(t.auto_resize==='WIDTH_AND_HEIGHT'?0:3));
+        if(first.fontName)fonts.add(first.fontName.family+' / '+first.fontName.style);
+      }else{
+        const fill=(s.fills||[]).find(p=>p.type==='SOLID'),stroke=(s.strokes||[]).find(p=>p.type==='SOLID');
+        if(fill||stroke){
+          type='Panel';const sid='Style_'+id,alpha=(s.opacity===undefined?1:s.opacity)*(r.ancestor_opacity===undefined?1:r.ancestor_opacity),lines=['[sub_resource type="StyleBoxFlat" id='+q(sid)+']','bg_color = '+color(fill,alpha),'draw_center = '+(fill?'true':'false'),'border_color = '+color(stroke,alpha)];
+          ['left','top','right','bottom'].forEach((side,i)=>lines.push('border_width_'+side+' = '+(stroke?Math.max(0,Math.round((s.stroke_sides||[])[i]||s.stroke_weight||0)):0)));
+          ['top_left','top_right','bottom_right','bottom_left'].forEach((side,i)=>lines.push('corner_radius_'+side+' = '+Math.max(0,Math.round((s.corners||[])[i]||0))));
+          sub.push(lines.join('\n'));props.push('theme_override_styles/panel = SubResource('+q(sid)+')');
+        }
+      }
+      if(!type)continue;
+      nodes.push('[node name='+q(r.name+'_'+id)+' type='+q(type)+' parent="."]\nlayout_mode = 0\noffset_left = '+f(rect.x)+'\noffset_top = '+f(rect.y)+'\noffset_right = '+f(rect.x+rect.width)+'\noffset_bottom = '+f(rect.y+rect.height)+'\nmouse_filter = 2\n'+props.join('\n'));
+    }
+    const root='[node name="FigmaUI" type="Control"]\nlayout_mode = 0\noffset_right = '+f(m.reference_size.width)+'\noffset_bottom = '+f(m.reference_size.height)+'\nclip_contents = '+(m.root_clips_content?'true':'false')+'\nmouse_filter = 2';
+    return {content:'[gd_scene load_steps='+(ext.length+sub.length+1)+' format=3]\n\n'+[...ext,...sub,root,...nodes].join('\n\n')+'\n',fonts:[...fonts]};
+  }
+  function csv(m){const cell=v=>'"'+String(v===null||v===undefined?'':v).replace(/"/g,'""')+'"';return '\ufeff'+[['resource_id','figma_node_id','original_name','resource_name','scope','mode','asset_path','x','y','logical_width','logical_height','export_scale','warnings'],...m.nodes.map(r=>[r.resource_id,r.id,r.original_name,r.name,r.scope,r.mode,r.asset_path,r.rect.x,r.rect.y,r.rect.width,r.rect.height,r.export_scale,(r.warnings||[]).join(' | ')])].map(row=>row.map(cell).join(',')).join('\r\n');}
+  function readme(m,fonts){return `# ${m.screen_name} — Godot UI Export\n\n1. ZIP의 figma_ui 폴더 전체를 Godot 4 프로젝트 루트(project.godot가 있는 폴더)로 복사하세요.\n2. Godot가 이미지를 가져온 다음 figma_ui/${m.bundle_name}/generated.tscn을 여세요.\n3. 기준 크기는 ${m.reference_size.width} × ${m.reference_size.height}입니다. PNG 배율은 텍스처 해상도이며 Control 크기는 logical size를 사용합니다.\n4. 텍스트에 실제 폰트와 Theme를 적용하고 버튼 동작·Container·앵커·9-slice를 설정하세요.\n\n## 결과\n- manifest.json: 원본 ID·부모 관계·transform·layout·텍스트 스타일·논리 크기·실제 PNG 크기\n- resources.csv: 리소스 목록\n- assets/shared, assets/screen: 공통/화면별 이미지\n- generated.tscn: 기준 크기의 시각 배치 초안 (평면 draw order)\n\n## 확인할 점\n- generated.tscn은 반응형 UI나 게임 동작을 자동 구현하지 않습니다.\n- Auto Layout은 현재 배치가 저장되며 Container 변환은 수동입니다.\n- native Label은 첫 스타일을 사용합니다. 폰트, 글꼴 두께, 자간, 행간, 대소문자 변환, 줄바꿈은 확인하세요.\n- 복잡한 모양은 PNG를 권장합니다. SVG 필터와 마스크는 Godot에서 차이가 날 수 있습니다.\n- 고정 경계 밖의 그림자·블러는 잘릴 수 있습니다. Figma에서 여백을 포함한 Frame을 만드세요.\n- 공통 분류는 폴더 구분입니다. 재사용 PackedScene과 중복 합치기는 자동 수행하지 않습니다.\n- 재추출 시 generated.tscn은 다시 생성됩니다. 게임 로직은 별도 씬/상속 씬에 작성하세요.\n\n## 필요한 폰트 (파일은 포함하지 않음)\n${fonts.map(f=>'- '+f).join('\n')||'- native 텍스트 없음'}\n\n## 경고\n${m.warnings.map(w=>'- '+w).join('\n')}\n`;}
+  return {zip,scene,csv,readme};
+})();
+window.ExportCore=ExportCore;
+</script>
+<script>
+const $=id=>document.getElementById(id);let root=null,rows=[],working=false,files=[],downloadUrl=null,downloadName='',drafts=new Map(),failedId=null;
+const send=(type,data={})=>parent.postMessage({pluginMessage:{type,...data}},'*');
+const status=(s,error=false)=>{$('status').textContent=s;$('status').className='status'+(error?' error':'');};
+function lock(value){working=value;for(const id of ['export','save','shared','refresh','scale','rename','pin'])$(id).disabled=value||(!root&&!['refresh','pin'].includes(id));$('cancel').hidden=!value;$('rows').querySelectorAll('input,select,button').forEach(e=>e.disabled=value);}
+function effective(){const blocked=new Set();return rows.map(r=>{const suppressed=r.hidden||blocked.has(r.parent_id);if(suppressed||['png','svg','skip'].includes(r.mode))blocked.add(r.id);return {...r,suppressed,duplicate_of:null};});}
+function counts(){const all=effective(),active=all.filter(r=>!r.suppressed&&r.mode!=='skip');$('count-all').textContent=rows.length;$('count-assets').textContent=active.filter(r=>['png','svg'].includes(r.mode)).length;$('count-native').textContent=active.filter(r=>r.mode==='native').length;$('count-shared').textContent=all.filter(r=>r.shared_candidate).length;}
+function remember(r){drafts.set(r.id,{name:r.name,scope:r.scope,mode:r.mode});}
+function el(tag,text,cls){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;if(cls)x.className=cls;return x;}
+function render(){
+  counts();const tbody=$('rows');tbody.replaceChildren();const query=$('search').value.toLowerCase(),assetsOnly=$('assets-only').checked;
+  const display=effective().filter(r=>(r.name+' '+r.original_name).toLowerCase().includes(query)&&(!assetsOnly||(!r.suppressed&&['png','svg'].includes(r.mode))));
+  $('empty').hidden=display.length>0;$('empty').textContent=root?'조건에 맞는 요소가 없습니다.':'Figma에서 화면 레이어 하나를 선택하세요.';
+  for(const view of display){const r=rows.find(x=>x.id===view.id),tr=el('tr');tr.dataset.nodeId=r.id;if(view.suppressed||r.mode==='skip')tr.classList.add('muted');if(r.id===failedId)tr.classList.add('validation-error');
+    const name=el('td'),nameField=el('div',undefined,'name-field'),input=el('input');input.type='text';input.value=r.name;input.setAttribute('aria-label',r.name+' 이름');input.maxLength=96;input.disabled=working;
+    input.classList.toggle('invalid',!/^[a-z0-9][a-z0-9_]{0,95}$/.test(r.name));input.oninput=()=>{r.name=input.value;remember(r);if(r.id===failedId)failedId=null;input.classList.toggle('invalid',!/^[a-z0-9][a-z0-9_]{0,95}$/.test(r.name));tr.classList.remove('validation-error');};name.append(input);
+    const focus=el('button','포커싱','focus-node');focus.type='button';focus.disabled=working;focus.setAttribute('aria-label',r.name+' Figma 노드로 포커싱');focus.onclick=()=>send('focus',{id:r.id});name.replaceChildren(nameField);nameField.append(input,focus);tr.append(name);
+    for(const field of ['mode','scope']){const td=el('td'),sel=el('select');const values=field==='mode'?[['native','native'],['png','PNG'],['svg','SVG'],['skip','제외']]:[['screen','화면 전용'],['shared','공통']];for(const [v,t]of values){const opt=el('option',t);opt.value=v;sel.append(opt);}sel.value=r[field];sel.disabled=working;sel.setAttribute('aria-label',r.original_name+' '+field);sel.onchange=()=>{r[field]=sel.value;remember(r);render();};td.append(sel);tr.append(td);}
+    const info=el('td');info.append(el('span',Math.round(r.bounds.width*100)/100+' × '+Math.round(r.bounds.height*100)/100,'badge'));
+    if(r.shared_candidate)info.append(el('span','공통 후보','badge green'));
+    if(view.suppressed)info.append(el('span',view.duplicate_of?'중복 제외':r.hidden?'숨김':'부모에 포함','badge amber'));
+    info.append(el('div',r.reason,'reason'));if(r.warnings.length)info.title=r.warnings.join('\n');tr.append(info);tbody.append(tr);
+  }
+}
+function configs(){return rows.map(r=>({id:r.id,name:r.name,scope:r.scope,mode:r.mode}));}
+function download(){if(!downloadUrl)return;const a=el('a');a.href=downloadUrl;a.download=downloadName;document.body.append(a);a.click();a.remove();}
+$('pin').onchange=()=>send('pin',{value:$('pin').checked});$('refresh').onclick=()=>send('refresh');$('search').oninput=render;$('assets-only').onchange=render;
+$('shared').onclick=()=>{rows.filter(r=>r.shared_candidate).forEach(r=>{r.scope='shared';remember(r);});render();status('공통 후보를 공통 분류로 표시했습니다. 의미가 같은지 확인하고 저장하세요.');};
+$('save').onclick=()=>{lock(true);status('이름·설정을 저장하고 있습니다…');send('save',{root_id:root.id,configs:configs(),rename_layers:$('rename').checked});};
+$('export').onclick=()=>{files=[];lock(true);status('최신 레이어 상태를 확인하고 있습니다…');send('export',{root_id:root.id,configs:configs(),scale:Number($('scale').value)});};
+$('cancel').onclick=()=>{send('cancel');status('현재 이미지 처리가 끝나면 취소합니다…');};$('download').onclick=download;
+window.onmessage=async event=>{
+  const msg=event.data.pluginMessage;if(!msg)return;
+  try{
+    if(msg.type==='loading'){status('레이어 분석 중…');$('export').disabled=true;$('save').disabled=true;}
+    if(msg.type==='empty'){root=null;rows=[];render();lock(false);status(msg.message);$('target').textContent='레이어를 선택하세요';$('target-info').textContent='Frame 하나를 선택하면 하위 요소를 분석합니다.';}
+    if(msg.type==='scan'){root=msg.root;rows=msg.rows.map(r=>({...r,...(drafts.get(r.id)||{})}));$('target').textContent=root.name;$('target-info').textContent=root.id+' · 기준 '+Math.round(root.bounds.width*100)/100+' × '+Math.round(root.bounds.height*100)/100+' · 하위 요소 '+rows.length+'개';lock(false);render();status('분석 완료. 이름과 추출 방식을 확인하세요.');}
+    if(msg.type==='saved'){lock(false);status(msg.count+'개 이름·설정을 Figma에 저장했습니다.');}
+    if(msg.type==='export-start'){files=[];$('progress').style.display='block';$('progress').value=0;$('progress').max=Math.max(1,msg.total);status('리소스 '+msg.total+'개 추출 중…');}
+    if(msg.type==='export-file'){files.push({path:msg.path,data:new Uint8Array(msg.bytes)});$('progress').value=msg.done;status(msg.done+' / '+msg.total+' · '+msg.name);}
+    if(msg.type==='export-complete'){
+      const m=msg.manifest,scene=ExportCore.scene(m),prefix='figma_ui/'+m.bundle_name+'/';
+      files.push({path:'manifest.json',data:JSON.stringify(m,null,2)},{path:'resources.csv',data:ExportCore.csv(m)},{path:'generated.tscn',data:scene.content},{path:'README.ko.md',data:ExportCore.readme(m,scene.fonts)});
+      const blob=ExportCore.zip(files.map(f=>({path:prefix+f.path,data:f.data})));if(downloadUrl)URL.revokeObjectURL(downloadUrl);downloadUrl=URL.createObjectURL(blob);downloadName=m.bundle_name+'.zip';$('download').style.display='inline-block';download();files=[];lock(false);$('progress').style.display='none';status('완료 · 이미지 '+m.assets.length+'개 + JSON + 리소스 목록 + Godot 씬. 다운로드가 안 되면 “ZIP 다시 받기”를 누르세요.');
+    }
+    if(msg.type==='error'){files=[];lock(false);$('progress').style.display='none';failedId=msg.node_id||null;status(msg.message,true);if(failedId){render();let tr=[...$('rows').children].find(x=>x.dataset.nodeId===failedId);if(!tr){$('search').value='';$('assets-only').checked=false;render();tr=[...$('rows').children].find(x=>x.dataset.nodeId===failedId);}if(tr){tr.scrollIntoView({block:'center'});const input=tr.querySelector('input');input.focus();input.select();}}}
+  }catch(e){files=[];lock(false);status('출력 처리 오류: '+e.message,true);}
+};
+lock(false);send('ready');
+</script></body></html>

@@ -1,0 +1,37 @@
+const { chromium } = require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES ? process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES + '/playwright' : 'playwright');
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+(async()=>{
+  const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+  const page=await browser.newPage({viewport:{width:1080,height:760},acceptDownloads:true});
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('file://'+path.resolve(__dirname,'../ui.html'));
+  const scan=JSON.parse(fs.readFileSync(path.join(__dirname,'output/scan.json'),'utf8'));
+  await page.evaluate(m=>window.postMessage({pluginMessage:m},'*'),scan);
+  await page.waitForFunction(()=>document.querySelectorAll('#rows tr').length===11);
+  assert.equal(await page.locator('#count-assets').textContent(),'4');
+  assert.equal(await page.locator('#count-shared').textContent(),'2');
+  const input=page.locator('#rows tr').nth(2).locator('input');await input.fill('button_start');
+  await page.locator('#shared').click();
+  assert.equal(await page.locator('#rows tr').nth(9).locator('select').nth(1).inputValue(),'shared');
+  await page.locator('#assets-only').check();assert.equal(await page.locator('#rows tr').count(),4);
+  await page.locator('#assets-only').uncheck();
+  await page.evaluate(()=>{window.sent=[];window.addEventListener('message',e=>{if(e.data.pluginMessage)window.sent.push(e.data.pluginMessage);});});
+  await page.locator('#rename').check();await page.locator('#save').click();
+  await page.waitForFunction(()=>window.sent.some(m=>m.type==='save'));
+  const save=await page.evaluate(()=>window.sent.find(m=>m.type==='save'));
+  assert(save.rename_layers);assert(save.configs.some(c=>c.name==='button_start'));
+  await page.evaluate(()=>window.postMessage({pluginMessage:{type:'saved',count:11}},'*'));
+  await page.waitForFunction(()=>!document.getElementById('export').disabled);
+  await page.screenshot({path:path.join(__dirname,'output/ui-preview.png'),fullPage:true});
+  const messages=JSON.parse(fs.readFileSync(path.join(__dirname,'output/messages.json'),'utf8'));
+  const output=messages.filter(m=>m.type.startsWith('export-'));
+  const downloadPromise=page.waitForEvent('download');
+  for(const m of output){if(m.type==='export-file')m.bytes=Object.values(m.bytes);await page.evaluate(m=>window.postMessage({pluginMessage:m},'*'),m);}
+  const d=await downloadPromise;await d.saveAs(path.join(__dirname,'output/ui-export.zip'));
+  assert.equal(d.suggestedFilename(),'screen_n_1_1.zip');
+  assert((await page.locator('#status').textContent()).includes('완료'));
+  assert.deepEqual(errors,[]);
+  await browser.close();console.log('PASS: UI rendering, naming edits, shared classification, filtering, rename/save contract, browser ZIP download.');
+})().catch(e=>{console.error(e);process.exit(1);});
