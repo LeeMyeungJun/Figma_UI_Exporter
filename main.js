@@ -166,7 +166,12 @@ async function operation(msg) {
   try {
     const root = await figma.getNodeByIdAsync(rootId);
     if (!root || root.removed) throw new Error('대상 레이어가 삭제되었습니다.');
-    const rows = validateConfig(await inspect(root), msg.configs, msg.type === 'save');
+    // Whole-selection export is an operation intent, not a recommendation.
+    // Saved native modes and stale UI drafts must not split its composition.
+    const configs = msg.type === 'export' && msg.export_scope === 'composition'
+      ? msg.configs.map(c => c.id === root.id ? { ...c, mode: c.mode === 'svg' ? 'svg' : 'png' } : c)
+      : msg.configs;
+    const rows = validateConfig(await inspect(root), configs, msg.type === 'save');
     if (msg.type === 'save') {
       let count = 0;
       for (const r of rows) {
@@ -184,7 +189,8 @@ async function operation(msg) {
     // Stable destination even when the screen layer is renamed.
     const bundle = 'screen_' + key(root);
     const assets = active.filter(r => ['png','svg'].includes(r.mode));
-    const manifest = { schema_version: 1, generator: 'Godot UI Exporter 1.0.0', screen_id: key(root), screen_name: root.name,
+    const manifest = { schema_version: 1, generator: 'Godot UI Exporter 1.1.0', screen_id: key(root), screen_name: root.name,
+      export_scope: msg.export_scope === 'composition' ? 'composition' : 'resources',
       bundle_name: bundle, root_node_id: root.id, reference_size: { width: b.width, height: b.height },
       bounds_policy: 'absoluteBoundingBox; useAbsoluteBounds=true; no transparent trim; outside effects may be clipped',
       coordinates: 'axis-aligned bounds relative to selected root; logical pixels independent of export scale',

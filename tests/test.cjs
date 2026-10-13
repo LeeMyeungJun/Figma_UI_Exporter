@@ -93,6 +93,12 @@ async function run(){
     assert.equal(calls.length,beforeCalls+1);assert.equal(calls.at(-1).id,parent.id);
     parent.setPluginData('godot_ui_exporter_v1',JSON.stringify({mode:'native'}));
     assert.equal((await context.api.inspect(parent))[0].mode,'native');
+    // Persisted native and stale child drafts cannot split whole-selection export.
+    const stale=cfg(await context.api.inspect(parent));stale[1].name='../included_child';
+    const beforeWhole=calls.length;
+    await figma.ui.onmessage({type:'export',root_id:parent.id,configs:stale,scale:1,export_scope:'composition'});
+    assert.equal(messages.at(-1).type,'export-complete');assert.equal(messages.at(-1).manifest.assets.length,1);
+    assert.equal(calls.length,beforeWhole+1);assert.equal(calls.at(-1).id,parent.id);
     parent.setPluginData('godot_ui_exporter_v1','');
     parent.exportSettings=[{format:'SVG'}];
     const svgRows=await context.api.inspect(parent);assert.equal(svgRows[0].mode,'svg');
