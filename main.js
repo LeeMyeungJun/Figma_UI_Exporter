@@ -92,7 +92,9 @@ async function inspect(root) {
     if (row.text) row.warnings.push('폰트 파일은 별도 준비. 줄바꿈·자간·혼합 스타일은 Godot에서 확인');
     if (rec.mode === 'png' && row.mode === 'native') row.warnings.push('복잡한 효과를 native로 지정함: Godot 씬에서 외형 차이 가능');
     if (row.layout.clips_content) row.warnings.push('Figma의 Clip content 설정은 유지됩니다. 프레임 자체가 숨긴 부분은 출력되지 않습니다.');
-    if (!['NORMAL','PASS_THROUGH'].includes(row.style.blend_mode)) row.warnings.push('배경 의존 혼합 모드: 배경과 함께 부모를 PNG로 추출 권장');
+    if (!['NORMAL','PASS_THROUGH'].includes(row.style.blend_mode)) row.warnings.push('배경 의존 혼합 모드: 투명 배경으로 독립 추출하므로 화면에서 보던 색감과 다를 수 있습니다.');
+    if (row.style.effects.some(e => e.visible !== false && e.type === 'BACKGROUND_BLUR')) row.warnings.push('배경 블러: 외부 배경을 제외하고 추출하므로 화면에서 보던 효과와 다를 수 있습니다.');
+    if (row.style.effects.some(e => e.visible !== false && e.type === 'GLASS')) row.warnings.push('Liquid Glass: 빈 임시 페이지에서 배경 없이 추출합니다. Figma는 SVG에 Glass 효과를 지원하지 않으므로 PNG를 사용하세요. 게임 배경의 실시간 굴절은 별도 셰이더가 필요합니다.');
     if (n.isMask) row.warnings.push('마스크만 추출하지 말고 마스크를 포함한 부모를 PNG로 지정하세요.');
     rows.push(row);
     if ('children' in n) for (const child of n.children) await walk(child, n.id, depth + 1, hiddenNow, ancestorOpacity * row.style.opacity);
@@ -164,6 +166,40 @@ function validateConfig(rows, configs, includeInactiveNames = false) {
   });
   return rows;
 }
+// Render an independent asset against transparency, outside its original backdrop.
+async function exportIsolated(n, settings, transparentBackground = true) {
+  const transform = clone(n.absoluteTransform);
+  // Glass can sample backdrop content on the same page even through an empty
+  // wrapper. A separate empty page removes that content from the render scene.
+  const page = figma.createPage();
+  let frame, copy;
+  try {
+    page.name = '__godot_ui_export_temporary__';
+    frame = figma.createFrame();
+    page.appendChild(frame);
+    frame.name = '__godot_ui_export_temporary__';
+    frame.fills = [];
+    frame.strokes = [];
+    frame.effects = [];
+    frame.clipsContent = false;
+    frame.blendMode = 'NORMAL';
+    frame.x = 0;
+    frame.y = 0;
+    copy = n.clone();
+    frame.appendChild(copy);
+    copy.relativeTransform = transform;
+    // A transparent parent does not remove a frame's own opaque fill.
+    // Only clear the exported container, never its child artwork.
+    const hasGlass = 'effects' in copy && copy.effects.some(e => e.visible !== false && e.type === 'GLASS');
+    if (transparentBackground && !hasGlass && ['FRAME','COMPONENT','INSTANCE','SECTION','COMPONENT_SET'].includes(copy.type)) copy.fills = [];
+    return await copy.exportAsync(settings);
+  } finally {
+    // Also clean up a clone if reparenting failed.
+    if (copy && !copy.removed) copy.remove();
+    if (frame && !frame.removed) frame.remove();
+    if (!page.removed) page.remove();
+  }
+}
 async function operation(msg) {
   if (busy) throw new Error('현재 작업이 끝난 후 다시 시도하세요.');
   if (!rootId || msg.root_id !== rootId) throw new Error('선택이 바뀌었습니다. 다시 분석하세요.');
@@ -190,6 +226,12 @@ async function operation(msg) {
     const scale = Number(msg.scale);
     if (![1,2,3,4].includes(scale)) throw new Error('PNG 배율은 1~4 중에서 선택하세요.');
     const active = rows.filter(r => !r.suppressed && r.mode !== 'skip');
+    const transparentBackground = msg.transparent_background !== false;
+    // The generated Godot scene must not recreate the selected screen background.
+    if (transparentBackground && ['FRAME','COMPONENT','INSTANCE','SECTION','COMPONENT_SET'].includes(root.type)) {
+      const screenRow = active.find(r => r.id === root.id);
+      if (screenRow && screenRow.mode === 'native') screenRow.style.fills = [];
+    }
     active.forEach(r => { r.export_bounds = exportBounds(r); });
     const rootRow = rows.find(r => r.id === root.id);
     const b = ['png','svg'].includes(rootRow.mode) ? exportBounds(rootRow) : bounds(root);
@@ -199,6 +241,7 @@ async function operation(msg) {
     const assets = active.filter(r => ['png','svg'].includes(r.mode));
     const manifest = { schema_version: 1, generator: 'Godot UI Exporter 1.2.0', screen_id: key(root), screen_name: root.name,
       export_scope: msg.export_scope === 'composition' ? 'composition' : 'resources',
+      background_policy: transparentBackground ? 'empty temporary page; exported container fills removed except Glass surfaces; child artwork preserved' : 'empty temporary page; asset fills preserved',
       bundle_name: bundle, root_node_id: root.id, reference_size: { width: b.width, height: b.height },
       bounds_policy: 'images: absoluteRenderBounds with absoluteBoundingBox fallback; useAbsoluteBounds=false; native: absoluteBoundingBox',
       reference_origin: { x: b.x, y: b.y },
@@ -223,7 +266,7 @@ async function operation(msg) {
       if (Math.max(r.export_bounds.width, r.export_bounds.height) * (r.mode === 'png' ? scale : 1) > 16384) throw new Error(r.name + ': 16,384px 초과. 배율을 낮추거나 나누세요.');
       const settings = r.mode === 'png' ? { format: 'PNG', constraint: { type: 'SCALE', value: scale }, contentsOnly: true, useAbsoluteBounds: false }
         : { format: 'SVG', svgOutlineText: true, svgIdAttribute: false, svgSimplifyStroke: true, contentsOnly: true, useAbsoluteBounds: false };
-      const bytes = await n.exportAsync(settings);
+      const bytes = await exportIsolated(n, settings, transparentBackground);
       if (cancelled) throw new Error('내보내기를 취소했습니다.');
       totalBytes += bytes.length;
       if (totalBytes > 100 * 1024 * 1024) throw new Error('이미지 합계 100MB 초과. 대상을 나누거나 배율을 낮추세요.');

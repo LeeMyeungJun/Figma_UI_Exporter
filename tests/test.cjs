@@ -16,6 +16,31 @@ function node(id,name,type,x,y,w,h,extra={}) {
     getPluginData:k=>meta[k]||'',setPluginData:(k,v)=>{meta[k]=v;},getMainComponentAsync:async()=>({key:'component-button'}),
     exportAsync:async settings=>{calls.push({id,settings});if(settings.format==='SVG')return new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"></svg>');const b=settings.useAbsoluteBounds===false&&n.absoluteRenderBounds?n.absoluteRenderBounds:{width:w,height:h};return png(Math.ceil(b.width*settings.constraint.value),Math.ceil(b.height*settings.constraint.value));},...extra};registry.set(id,n);if(n.children)n.children.forEach(c=>c.parent=n);return n;
 }
+const temporaryFrames=[], temporaryPages=[], exportedCopies=[];
+// Clone into a separate parent, retaining the source export stub for fixtures.
+function installClone(n) {
+  n.clone=()=>{
+    const copy={...n,removed:false,relativeTransform:JSON.parse(JSON.stringify(n.relativeTransform))};
+    copy.exportAsync=async settings=>{
+      exportedCopies.push(copy);
+      assert(temporaryFrames.includes(copy.parent));
+      assert.equal(copy.parent.fills.length,0);
+      assert.equal(copy.parent.clipsContent,false);
+      assert.equal(copy.parent.blendMode,'NORMAL');
+      assert.equal(copy.parent.removed,false);
+      assert(temporaryPages.includes(copy.parent.parent));
+      assert.equal(copy.parent.parent.children.length,1);
+      assert.equal(copy.parent.parent.removed,false);
+      assert.equal(JSON.stringify(copy.relativeTransform),JSON.stringify(n.absoluteTransform));
+      return n.exportAsync(settings);
+    };
+    copy.remove=()=>{copy.removed=true;};
+    return copy;
+  };
+  return n;
+}
+const originalSet=registry.set.bind(registry);
+registry.set=(id,n)=>originalSet(id,installClone(n));
 const solid={type:'SOLID',color:{r:.2,g:.3,b:.4}};
 const icon=node('2:1','아이콘','VECTOR',110,220,24,24);
 const image1=node('2:2','시작 버튼','RECTANGLE',150,220,100,40,{fills:[{type:'IMAGE',imageHash:'same-image'}]});
@@ -28,6 +53,14 @@ const inst1=node('2:7','버튼 1','INSTANCE',120,400,100,40,{children:[]});
 const inst2=node('2:8','버튼 2','INSTANCE',240,400,100,40,{children:[]});
 const root=node('1:1','Godot2','FRAME',100,200,640,480,{children:[icon,image1,image2,text,composite,hidden,inst1,inst2],fills:[solid],clipsContent:true});
 const figma={showUI:()=>{},currentPage:{selection:[root]},ui:{postMessage:m=>messages.push(m)},getNodeByIdAsync:async id=>registry.get(id)||null,on:(name,fn)=>{events[name]=fn;},viewport:{scrollAndZoomIntoView:()=>{}}};
+figma.createFrame=()=>{
+  const frame={removed:false,children:[],appendChild(copy){copy.parent=this;this.children.push(copy);},remove(){this.removed=true;}};
+  temporaryFrames.push(frame);return frame;
+};
+figma.createPage=()=>{
+  const page={removed:false,children:[],appendChild(child){child.parent=this;this.children.push(child);},remove(){this.removed=true;}};
+  temporaryPages.push(page);return page;
+};
 const context=vm.createContext({figma,__html__:'',TextEncoder,Uint8Array,console});
 vm.runInContext(fs.readFileSync(path.join(dir,'main.js'),'utf8')+'\nthis.api={inspect,validateConfig,scan};',context);
 const ui=fs.readFileSync(path.join(dir,'ui.html'),'utf8');
@@ -52,6 +85,8 @@ async function run(){
   await figma.ui.onmessage({type:'export',root_id:root.id,configs,scale:2});
   const done=messages.find(m=>m.type==='export-complete');assert(done,JSON.stringify(messages.filter(m=>m.type==='error')));
   const m=done.manifest;assert.equal(m.assets.length,4);assert.equal(calls.length,4);
+  assert.equal(m.nodes.find(r=>r.id===root.id).style.fills.length,0);
+  assert.equal(root.fills.length,1);
   assert(!calls.some(c=>['3:1','3:2'].includes(c.id)));
   assert(calls.every(c=>c.settings.useAbsoluteBounds===false&&c.settings.constraint.value===2));
   const a=m.assets.find(a=>a.node_id===image1.id);assert.equal(a.pixel_size.width,200);assert.equal(a.logical_size.width,100);
@@ -142,6 +177,40 @@ async function run(){
     assert.equal(messages.at(-1).manifest.assets.length,1);assert.equal(calls.at(-1).settings.format,'SVG');
   }
   assert.throws(()=>core.zip([{path:'../escape',data:'x'}]));
+  // Opaque container fill is removed; artwork and source fills survive.
+  const artwork=node('transparent:art','art','RECTANGLE',0,0,8,8,{fills:[solid]});
+  const opaque=node('transparent:frame','opaque','FRAME',0,0,16,16,{fills:[solid],children:[artwork]});
+  figma.currentPage.selection=[opaque];await context.api.scan(false);
+  const opaqueConfigs=cfg(messages.at(-1).rows);opaqueConfigs[0].mode='png';
+  for (const mode of ['png','svg']) {
+    opaqueConfigs[0].mode=mode;
+    await figma.ui.onmessage({type:'export',root_id:opaque.id,configs:opaqueConfigs,scale:1});
+    assert.equal(messages.at(-1).type,'export-complete');
+    assert.equal(exportedCopies.at(-1).fills.length,0);
+    assert.equal(artwork.fills[0],solid);assert.equal(opaque.fills[0],solid);
+    await figma.ui.onmessage({type:'export',root_id:opaque.id,configs:opaqueConfigs,scale:1,transparent_background:false});
+    assert.equal(messages.at(-1).type,'export-complete');
+    assert.equal(exportedCopies.at(-1).fills[0],solid);
+  }
+  // Glass must retain its tint and effect, with no original page backdrop.
+  const glassEffect={type:'GLASS',visible:true,refraction:0.5};
+  const glass=node('transparent:glass','glass','FRAME',100,200,16,16,{fills:[solid],effects:[glassEffect],children:[]});
+  figma.currentPage.selection=[glass];await context.api.scan(false);
+  await figma.ui.onmessage({type:'export',root_id:glass.id,configs:cfg(messages.at(-1).rows),scale:1});
+  assert.equal(messages.at(-1).type,'export-complete');
+  assert.equal(exportedCopies.at(-1).fills[0],solid);
+  assert.equal(exportedCopies.at(-1).effects[0],glassEffect);
+  assert.equal(glass.fills[0],solid);
+  // A renderer failure must leave no temporary nodes or source changes.
+  const failure=node('failure','failure','VECTOR',0,0,8,8);
+  failure.exportAsync=async()=>{throw new Error('render failed');};
+  figma.currentPage.selection=[failure];await context.api.scan(false);
+  await figma.ui.onmessage({type:'export',root_id:failure.id,configs:cfg(messages.at(-1).rows),scale:1});
+  assert.equal(messages.at(-1).message,'render failed');
+  assert(temporaryFrames.length>0);
+  assert(temporaryFrames.every(f=>f.removed&&f.children.every(c=>c.removed)));
+  assert(temporaryPages.length>0&&temporaryPages.every(p=>p.removed));
+  assert.equal(root.fills[0],solid);assert.equal(image1.parent,root);
   console.log('PASS: naming persistence, shared candidates, selection, geometry, duplicate-source exports, subtree suppression, cancellation, scene paths, ZIP safety.');
 }
 run().catch(e=>{console.error(e);process.exit(1);});

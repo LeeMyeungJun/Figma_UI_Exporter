@@ -10,7 +10,7 @@
 <div class="toolbar"><input id="search" type="text" placeholder="이름 검색" aria-label="검색"><label><input id="assets-only" type="checkbox">추출 이미지만</label><button id="shared">공통 후보 표시 적용</button></div>
 <div class="table-wrap"><table><thead><tr><th>이름</th><th>추출 방식</th><th>분류</th><th>분석 · 크기</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="empty">Figma에서 Godot2 같은 화면 레이어를 선택하세요.</div></div>
 <div class="note">최상위 화면을 <b>native</b>로 두고, 한 장으로 묶을 하위 부모를 <b>PNG / SVG</b>로 지정하세요. 해당 부모의 자식 전체가 이미지 한 장에 포함되며 별도 파일로 나오지 않습니다. 더 나누려면 그 부모를 <b>native</b>로 바꾸세요.<br>추출 범위의 기본값은 <b>개별 리소스</b>이며 각 행의 저장된 방식을 따릅니다. <b>선택 전체 한 장</b>은 화면 전체를 합성할 때만 사용하세요.<br>공통 후보는 컴포넌트 반복 기준입니다. 한글 레이어명은 직접 수정해 주세요.</div>
-<div class="tip">렌더링 경계 사용 · 바깥 그림자·스트로크 포함 · PNG 배율과 논리 크기 분리 · Figma Clip content·마스크 유지</div></main>
+<div class="tip"><label title="추출하는 프레임·컴포넌트 자체의 채우기를 제거합니다. 자식 도형과 이미지는 유지합니다."><input id="transparent-background" type="checkbox" checked>투명 배경 (추출 프레임 채우기 제거)</label><br>렌더링 경계 사용 · 바깥 그림자·스트로크 포함 · PNG 배율과 논리 크기 분리 · Figma Clip content·마스크 유지</div></main>
 <div class="footer"><div id="status" class="status" role="status" aria-live="polite">준비됨</div><progress id="progress" value="0" max="1"></progress><div class="actions"><div><button id="save">이름·설정 저장</button><label><input id="rename" type="checkbox">레이어 이름에도 적용</label></div><div><label>추출 범위<select id="export-scope"><option value="resources">개별 리소스</option><option value="composition">선택 전체 한 장</option></select></label><label>PNG 배율<select id="scale"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select></label><button id="cancel" hidden>취소</button><button id="download">ZIP 다시 받기</button><button id="export" class="primary">ZIP 내보내기</button></div></div></div>
 <script>
 /* Dependency-free ZIP (STORE) writer and Godot 4 starter scene compiler. */
@@ -103,7 +103,7 @@ $('pin').onchange=()=>send('pin',{value:$('pin').checked});$('refresh').onclick=
 $('shared').onclick=()=>{rows.filter(r=>r.shared_candidate).forEach(r=>{r.scope='shared';remember(r);});render();status('공통 후보를 공통 분류로 표시했습니다. 의미가 같은지 확인하고 저장하세요.');};
 $('save').onclick=()=>{lock(true);status('이름·설정을 저장하고 있습니다…');send('save',{root_id:root.id,configs:configs(),rename_layers:$('rename').checked});};
 $('export-scope').onchange=render;
-$('export').onclick=()=>{files=[];lock(true);status('최신 레이어 상태를 확인하고 있습니다…');send('export',{root_id:root.id,configs:configs(),scale:Number($('scale').value),export_scope:$('export-scope').value});};
+$('export').onclick=()=>{files=[];lock(true);status('최신 레이어 상태를 확인하고 있습니다…');send('export',{root_id:root.id,configs:configs(),scale:Number($('scale').value),export_scope:$('export-scope').value,transparent_background:$('transparent-background').checked});};
 $('cancel').onclick=()=>{send('cancel');status('현재 이미지 처리가 끝나면 취소합니다…');};$('download').onclick=download;
 window.onmessage=async event=>{
   const msg=event.data.pluginMessage;if(!msg)return;
